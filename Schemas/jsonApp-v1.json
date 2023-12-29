@@ -1,0 +1,29 @@
+{
+  "$schema": "http://json-schema.org/draft-04/schema#",
+  "type": "object",
+  "properties": {
+    "app:input": {
+      "type": "object"
+    },
+    "app:output": {
+      "type": "object"
+    },
+    "app:functions": {
+      "type": "object"
+    },
+    "app:variables": {
+      "type": "object"
+    },
+    "app:pathAliases": {
+      "type": "object"
+    },
+	"app:hashOfSalt": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "app:input",
+    "app:output"
+  ],
+  "not": { "required": [ "app:target" ] }
+}
