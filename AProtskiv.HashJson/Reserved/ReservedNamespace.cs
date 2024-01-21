@@ -1,16 +1,28 @@
-﻿using System.Collections.Generic;
+﻿using Newtonsoft.Json;
+using System.Collections.Generic;
 
 namespace AProtskiv.HashJson.Reserved
 {
 
     public class ReservedNamespace
     {
-        public ReservedNamespace(string nameSpace)
+        public ReservedNamespace(string name)
         {
-            Namespace = nameSpace;
+            Name = name;
         }
 
-        public string Namespace { get; }
-        public List<ReservedFunction> ReservedFunctions { get; set; } = new List<ReservedFunction>();
+        /// <summary>
+        /// Namespace name
+        /// </summary>
+        [JsonProperty]
+        public string Name { get; }
+
+        [JsonProperty(NullValueHandling = NullValueHandling.Ignore)]
+        public List<ReservedFunction> Functions { get; set; } = new List<ReservedFunction>();
+    }
+
+    public static class APP_ReservedNamespace_Consts
+    {
+        public const string HashChainOfSalt_PROPERTY = "app:hashChainOfSalt";
     }
 }

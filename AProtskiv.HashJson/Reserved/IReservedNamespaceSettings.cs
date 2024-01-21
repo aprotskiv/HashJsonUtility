@@ -2,8 +2,10 @@
 
 namespace AProtskiv.HashJson.Reserved
 {
-    public interface IReservedNamespaceDictionary : IReadOnlyDictionary<string, ReservedNamespace>
+    public interface IReservedNamespaceSettings
     {
+        Dictionary<string, ReservedNamespace> Items { get; }
+
         string Separator { get; }
     }
 }

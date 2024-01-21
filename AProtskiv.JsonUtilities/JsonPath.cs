@@ -1,12 +1,14 @@
 ﻿using AProtskiv.JsonUtilities.Exceptions;
+using AProtskiv.JsonUtilities.NewtonsoftJson;
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text;
 
 namespace AProtskiv.JsonUtilities
 {
 
-    public class JsonPath : IComparable<JsonPath>
+    public partial class JsonPath : IComparable<JsonPath>
 	{
 		/// <summary>
 		/// Path for root token
@@ -39,31 +41,13 @@ namespace AProtskiv.JsonUtilities
 		/// <param name="newtonsoftJsonPath"></param>
 		public static List<object> ParseSegments(string newtonsoftJsonPath)
 		{
-			var normalizedInput = newtonsoftJsonPath
-					.TrimStart(new[] { '$', '.' })
-					.TrimEnd(new[] { '.' });
+			var segmentsWithZeroBasedIndicies = new List<object>();
 
-			List<object> segmentsWithZeroBasedIndicies = new List<object>();
-
-			if (normalizedInput.Length > 0)
+			foreach (var filter in new NewtonsoftJson_Linq_JsonPath_JPath(newtonsoftJsonPath).Filters)
 			{
-				var assembly = typeof(Newtonsoft.Json.JsonConvert).Assembly;
-
-				var tJsonPath = assembly.GetType("Newtonsoft.Json.Linq.JsonPath.JPath");
-				var tArrayIndexFilter = assembly.GetType("Newtonsoft.Json.Linq.JsonPath.ArrayIndexFilter");
-				var tFieldFilter = assembly.GetType("Newtonsoft.Json.Linq.JsonPath.FieldFilter");
-
-				var objJsonPath = Activator.CreateInstance(tJsonPath, new object[] { normalizedInput });
-				var filters = tJsonPath.GetProperty("Filters").GetValue(objJsonPath) as System.Collections.IEnumerable;
-
-				var enumerator = filters.GetEnumerator();
-				while (enumerator.MoveNext())
+				if (filter is INewtonsoftJson_Linq_JsonPath_ArrayIndexFilter indexFilter)
 				{
-					var objFilter = enumerator.Current;
-					if (objFilter.GetType() == tArrayIndexFilter)
-					{
-						//public property
-						var index = tArrayIndexFilter.GetProperty("Index").GetValue(objFilter) as int?;
+					var index = indexFilter.Index;
 						if (index.HasValue)
 						{
 							segmentsWithZeroBasedIndicies.Add(index.Value);
@@ -73,22 +57,15 @@ namespace AProtskiv.JsonUtilities
 							// ??
 						}
 					}
-					else if (objFilter.GetType() == tFieldFilter)
+				else if (filter is INewtonsoftJson_Linq_JsonPath_FieldFilter fieldFilter)
 					{
-						//internal field
-						var fName = tFieldFilter.GetField("Name", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
-						var name = fName.GetValue(objFilter) as string;
-
-						if (!string.IsNullOrEmpty(name))
+                    if (fieldFilter.Name != null) // can be empty property name ''
 						{
-							segmentsWithZeroBasedIndicies.Add(name);
-						}
-						else
-						{
-						}
+                        segmentsWithZeroBasedIndicies.Add(fieldFilter.Name);
 					}
 				}
 			}
+			
 			return segmentsWithZeroBasedIndicies;
 		}
 
@@ -107,6 +84,32 @@ namespace AProtskiv.JsonUtilities
 		{
 			return "'{" + this.ToString() + "}'::text[] ";
 		}
+
+        /// <summary>
+        /// $.path1 <para/>
+		/// $.path1[0] <para/>
+		/// $.path1[0].path2 <para/>
+		/// $[1][2]
+        /// </summary>        
+        public string ToPostgresJsonpath()
+        {
+			var sb = new StringBuilder();
+			sb.Append('$');
+
+			foreach (var x in Segments)
+			{
+				if (x is string property)
+				{
+                    sb.Append('.').Append(EscapePostgresProperty(property));
+                }
+				else
+				{
+					sb.Append('[').Append(x).Append(']');
+                }
+            }
+
+            return sb.ToString();
+        }
 
 		private static string EscapePostgresProperty(string property)
 		{

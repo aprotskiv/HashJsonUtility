@@ -1,4 +1,6 @@
-﻿using AProtskiv.HashJson.Reserved;
+﻿using AProtskiv.HashJson.Computing;
+using AProtskiv.HashJson.Extensions;
+using AProtskiv.HashJson.Reserved;
 using AProtskiv.JsonUtilities;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
@@ -6,39 +8,20 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Security.Cryptography;
-using System.Text;
 
 namespace AProtskiv.HashJson
 {
+
     public class JsonHashUtility
-    {
-        private readonly byte[] _key;
-
-        public JsonHashUtility(string key)
         {
-            _key = Encoding.UTF8.GetBytes(key);
-        }
-
-        public string HashMD5(string inputJson, Formatting formatting)
-        {
-            return Hash(inputJson, new HMACMD5(_key), formatting);
-        }
-
-        public string HashSHA256(string inputJson, Formatting formatting)
-        {
-            return Hash(inputJson, new HMACSHA256(_key), formatting);
-        }
-
-        public string HashSHA512(string inputJson, Formatting formatting)
-        {
-            return Hash(inputJson, new HMACSHA512(_key), formatting);
-        }
-
         static ReservedNamespace Build_XLS_namespace()
         {
             var nsXLS = new ReservedNamespace("xls");
-            nsXLS.ReservedFunctions.AddRange(new[] {
-                    new ReservedFunction(nsXLS, "compare", new ReservedFunction.ArgumentsToIgnore{
+            nsXLS.Functions.AddRange(new[] {
+                    new ReservedFunction(
+                        //nsXLS, 
+                        "compare", new ArgumentsToIgnore
+                    {
                         AtJArrayIndecies = new int[]{  1 } ,
                         InJObjectProperties = new string[]{ "operator" /*, "left", "right" */ }
                     }),
@@ -47,29 +30,40 @@ namespace AProtskiv.HashJson
             return nsXLS;
         }
 
-        static IReservedNamespaceDictionary GetReservedNamespaces()
+        public NamespaceSettings GetReservedNamespaces()
         {
-            var result = new ReservedNamespaceDictionary();
+            var result = new NamespaceSettings();
 
             // XLS
             {
                 var nsXLS = Build_XLS_namespace();
-                result.Add(nsXLS.Namespace, nsXLS);
+                result.Items.Add(nsXLS.Name, nsXLS);
             }
 
             // APP
             {
                 var nsAPP = new ReservedNamespace("app");
-                result.Add(nsAPP.Namespace, nsAPP);
+                result.Items.Add(nsAPP.Name, nsAPP);
             }
 
             return result;            
         }
 
-        public string Hash(string inputJson, HashAlgorithm hashAlgorithm, Formatting formatting)
+        public string Hash(string inputJson, IComputeHashProvider computeHashProvider, Formatting formatting)
+        {            
+            return ParseAndHashToken(inputJson, computeHashProvider)
+                .ToString(formatting);
+        }
+
+        public JToken ParseAndHashToken(string inputJson, IComputeHashProvider computeHashProvider)
         {
             JToken inputRoot = JRaw.Parse(inputJson);
+            var outputRoot = HashToken(inputRoot, computeHashProvider);
+            return outputRoot;
+        }
 
+        public JToken HashToken(JToken inputRoot, IComputeHashProvider computeHashProvider)
+        {
             //collect aliases
             Dictionary<string, string> dictAliases = new Dictionary<string, string>();
 
@@ -77,17 +71,17 @@ namespace AProtskiv.HashJson
                     inputRootToken: inputRoot,
                     inputContextToken: inputRoot,
                     skipHashOnLevel: false,
-                    hashAlgorithm,
+                    computeHashProvider,
                     dictAliases,
                     reservedNamespaces: GetReservedNamespaces(),
                     reservedFunctionContext: null);
 
-            return outputRoot.ToString(formatting);
+            return outputRoot;
         }
 
-        private static JToken HashRecursively(JToken inputRootToken, JToken inputContextToken, bool skipHashOnLevel, HashAlgorithm hashAlgorithm,
+        private JToken HashRecursively(JToken inputRootToken, JToken inputContextToken, bool skipHashOnLevel, IComputeHashProvider computeHashProvider,
             Dictionary<string, string> dictAliases,
-            IReservedNamespaceDictionary reservedNamespaces,
+            IReservedNamespaceSettings reservedNamespaces,
             ReservedFunction reservedFunctionContext,
             int? arrayItemIndex = null)
         {
@@ -123,7 +117,7 @@ namespace AProtskiv.HashJson
                     }
                     else
                     {
-                        newPropertyName = TryHashProperty(hashAlgorithm, reservedNamespaces, originalPropertyName, out reservedFunctionToChild);
+                        newPropertyName = TryHashProperty(computeHashProvider, reservedNamespaces, originalPropertyName, out reservedFunctionToChild);
                         skipHashOnChildLevel = newPropertyName.Equals(originalPropertyName); //skip when entire property was NOT hashed  ( "app:ALIASES" or "XLS:SUM" )
                     }
 
@@ -147,7 +141,7 @@ namespace AProtskiv.HashJson
                         }
                         else
                         {
-                            output = HashStringToken(inputContextToken, hashAlgorithm, reservedNamespaces);
+                            output = HashStringToken(inputContextToken, computeHashProvider, reservedNamespaces);
                         }
                     }
                     break;
@@ -173,7 +167,7 @@ namespace AProtskiv.HashJson
                             inputRootToken: inputRootToken,
                             inputContextToken: childToken,
                             skipHashOnLevel: skipHashOnChildLevel,
-                            hashAlgorithm,
+                            computeHashProvider,
                             dictAliases: dictAliases,
                             reservedNamespaces: reservedNamespaces,
                             reservedFunctionToChild,
@@ -205,7 +199,7 @@ namespace AProtskiv.HashJson
             return (function != null) && function.Arguments.InJObjectProperties.Contains(propertyName); // without IgnoreCase !!!
         }
 
-        private static string TryHashProperty(HashAlgorithm hashAlgorithm, IReservedNamespaceDictionary reservedNamespaces,
+        private static string TryHashProperty(IComputeHashProvider computeHashProvider, IReservedNamespaceSettings reservedNamespaces,
             string originalPropertyName,
             out ReservedFunction reservedFunction)
         {
@@ -219,7 +213,7 @@ namespace AProtskiv.HashJson
                 if (!String.IsNullOrWhiteSpace(level2Suffix))
                 {
                     // "app:functions:GetAverage" -> "app:functions:FD137F90B619DCF6951EF9649F1CB231"
-                    newPropertyName = reservedPrefix + hashAlgorithm.ComputeHashAsString(level2Suffix);
+                    newPropertyName = reservedPrefix + computeHashProvider.ComputeHashAsString(level2Suffix);
                 }
                 else
                 {
@@ -230,14 +224,14 @@ namespace AProtskiv.HashJson
             }
             else
             {
-                newPropertyName = hashAlgorithm.ComputeHashAsString(originalPropertyName);
+                newPropertyName = computeHashProvider.ComputeHashAsString(originalPropertyName);
             }
 
             return newPropertyName;
         }
 
-        private static JToken HashStringToken(JToken inputContextToken, HashAlgorithm hashAlgorithm,
-            IReservedNamespaceDictionary reservedNamespaces)
+        private JToken HashStringToken(JToken inputContextToken, IComputeHashProvider computeHashProvider,
+            IReservedNamespaceSettings reservedNamespaces)
         {
             JToken output;
 
@@ -260,7 +254,7 @@ namespace AProtskiv.HashJson
                     if (!jsonPath.IsNotValidNewtonsoftJsonPath)
                     {
                         // found valid JsonPath
-                        var hashedPath = HashJsonPath(hashAlgorithm, jsonPath, reservedNamespaces);
+                        var hashedPath = HashJsonPath(computeHashProvider, jsonPath, reservedNamespaces);
                         // make wellformed NewtonsoftJsonPath
                         newValue = "$." + hashedPath.ToNewtonsoftJsonPath(); // "$.['a1'] " or "$.[1].['a1']"
                     }
@@ -269,7 +263,7 @@ namespace AProtskiv.HashJson
 
             if (newValue == null) // no value - make hash from original Value
             {
-                newValue = hashAlgorithm.ComputeHashAsString(originalValue);
+                newValue = computeHashProvider.ComputeHashAsString(originalValue);
             }
 
             output = new JValue(newValue);
@@ -277,8 +271,8 @@ namespace AProtskiv.HashJson
             return output;
         }
 
-        public static JsonPath4Select HashJsonPath(HashAlgorithm algorithm, IJsonPath4Select jsonPath,
-            IReservedNamespaceDictionary reservedNamespaces)
+        public JsonPath4Select HashJsonPath(IComputeHashProvider algorithm, IJsonPath4Select jsonPath,
+            IReservedNamespaceSettings reservedNamespaces)
         {
             return new JsonPath4Select(jsonPath.Segments.Select(
                     x => x is String xString
@@ -297,7 +291,7 @@ namespace AProtskiv.HashJson
         /// <param name="reservedNamespaces">reserved namespaces</param>
         /// <param name="reservedPrefix">if NOT null - then ends with ':'</param>
         /// <param name="level2Suffix">second level namespace suffix. If NOT null - then does NOT start with ':'</param>        
-        private static bool HasReservedPrefix(string newPropertyName, IReservedNamespaceDictionary reservedNamespaces,
+        private static bool HasReservedPrefix(string newPropertyName, IReservedNamespaceSettings reservedNamespaces,
             out string reservedPrefix,
             out string level2Suffix,
             out ReservedFunction reservedFunction)
@@ -307,9 +301,9 @@ namespace AProtskiv.HashJson
             level2Suffix = null;
             reservedFunction = null;
 
-            foreach (ReservedNamespace rootNamespace in reservedNamespaces.Values)
+            foreach (ReservedNamespace rootNamespace in reservedNamespaces.Items.Values)
             {
-                var namespace1Level = rootNamespace.Namespace + reservedNamespaces.Separator;
+                var namespace1Level = rootNamespace.Name + reservedNamespaces.Separator;
                 if (newPropertyName.StartsWith(namespace1Level, StringComparison.InvariantCultureIgnoreCase))
                 {
                     reservedPrefix = namespace1Level;
@@ -336,7 +330,7 @@ namespace AProtskiv.HashJson
                     else
                     {
                         // it's predefined function from namespace
-                        reservedFunction = rootNamespace.ReservedFunctions.FirstOrDefault(x => x.Function.Equals(level1Suffix, StringComparison.InvariantCultureIgnoreCase));
+                        reservedFunction = rootNamespace.Functions.FirstOrDefault(x => x.FunctionName.Equals(level1Suffix, StringComparison.InvariantCultureIgnoreCase));
                     }
 
                     result = true;

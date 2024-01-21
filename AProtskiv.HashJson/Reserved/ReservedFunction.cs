@@ -1,23 +1,26 @@
-﻿namespace AProtskiv.HashJson.Reserved
+﻿using Newtonsoft.Json;
+
+namespace AProtskiv.HashJson.Reserved
 {
     public class ReservedFunction
     {
-        public ReservedFunction(ReservedNamespace nameSpace, string function, ArgumentsToIgnore args)
+        public ReservedFunction(
+            //ReservedNamespace nameSpace, 
+            string functionName, ArgumentsToIgnore args)
         {
-            Namespace = nameSpace;
-            Function = function;
+            //this.nameSpace = nameSpace;
+            FunctionName = functionName;
             Arguments = args;
         }
 
-        public ReservedNamespace Namespace { get; set; }
-        public string Function { get; set; }
+        //private readonly ReservedNamespace nameSpace;
+        //public ReservedNamespace GetNamespace() => nameSpace;
 
+
+        [JsonProperty]
+        public string FunctionName { get; set; }
+
+        [JsonProperty]
         public ArgumentsToIgnore Arguments { get; set; }
-
-        public class ArgumentsToIgnore
-        {
-            public int[] AtJArrayIndecies { get; set; } = new int[] { };
-            public string[] InJObjectProperties { get; set; } = new string[] { };
-        }
     }
 }

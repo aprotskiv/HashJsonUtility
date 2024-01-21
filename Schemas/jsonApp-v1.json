@@ -17,7 +17,7 @@
     "app:pathAliases": {
       "type": "object"
     },
-	"app:hashOfSalt": {
+	"app:hashChainOfSalt": {
       "type": "string"
     }
   },
